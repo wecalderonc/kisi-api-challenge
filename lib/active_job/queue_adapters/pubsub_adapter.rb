@@ -7,7 +7,12 @@ module ActiveJob
       #
       # @param [ActiveJob::Base] job The job to be performed.
       def enqueue(job)
-        raise(NotImplementedError)
+        serialized_job = serialize_job(job)
+        Pubsub.publish("general_jobs_queue", serialized_job)
+      rescue Google::Cloud::Error => e
+        Rails.logger.error("Unexpected GCP error while enqueueing job #{job.class.name}: #{e.message}")
+      rescue StandardError => e
+        Rails.logger.error("Unexpected error while enqueueing job #{job.class.name}: #{e.message}")
       end
 
       # Enqueue a job to be performed at a certain time.
@@ -15,7 +20,24 @@ module ActiveJob
       # @param [ActiveJob::Base] job The job to be performed.
       # @param [Float] timestamp The time to perform the job.
       def enqueue_at(job, timestamp)
-        raise(NotImplementedError)
+        Rails.logger.info("Scheduling job #{job.class.name} to be performed at #{Time.at(timestamp)}")
+        serialized_job = serialize_job(job, timestamp)
+        Pubsub.publish("general_jobs_queue", serialized_job)
+      rescue Google::Cloud::Error => e
+        Rails.logger.error("Unexpected GCP error while enqueueing job #{job.class.name}: #{e.message}")
+      rescue StandardError => e
+        Rails.logger.error("Unexpected error while enqueueing job #{job.class.name}: #{e.message}")
+      end
+
+      private
+
+      def serialize_job(job, timestamp = nil)
+        {
+          job_class: job.class.to_s,
+          job_id: job.job_id,
+          arguments: job.arguments,
+          execute_at: timestamp
+        }.to_json
       end
     end
   end
